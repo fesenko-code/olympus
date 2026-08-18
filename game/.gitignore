@@ -1,0 +1,6 @@
+# Dependencies (installed via npm install; not committed)
+node_modules/
+
+# Build/typecheck artifacts
+*.tsbuildinfo
+dist/
