@@ -38,16 +38,18 @@ No Anthropic keys, no cloud — everything runs on the user's machine.
 
 ## Prerequisites
 
-- `pip install pydantic-ai` (or `uv pip install pydantic-ai`).
-- Ollama running locally with `hermes3:8b` (verified present at
-  `http://localhost:11434`). No Anthropic / OpenAI keys.
+- `pip install pydantic-ai` (verified: pydantic-ai 2.31.1; pulls `openai>=2.45` for the Ollama provider).
+- Ollama running locally with `hermes3:8b`. The correct local endpoint for the
+  OpenAI-compatible provider is `http://localhost:11434/v1` (the `/v1` suffix is
+  required). No Anthropic / OpenAI keys.
 
 ## Example Invocation
 
 ```python
 from pydantic import BaseModel
 from pydantic_ai import Agent
-from pydantic_ai.models.ollama import OlamaModel
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 class ResearchFindings(BaseModel):
     question: str
@@ -56,22 +58,26 @@ class ResearchFindings(BaseModel):
     recommendation: str
 
 agent = Agent(
-    OlamaModel(model_name="hermes3:8b", base_url="http://localhost:11434"),
-    result_type=ResearchFindings,
-    system_prompt="You are Athena, an R&D architect. Return only the model.",
+    OllamaModel(
+        model_name="hermes3:8b",
+        provider=OllamaProvider(base_url="http://localhost:11434/v1"),
+    ),
+    output_type=ResearchFindings,
+    instructions="Reply with ONLY a JSON object matching the schema. No prose.",
+    retries=3,
 )
 
 result = await agent.run("How should Olympus cache TencentDB scene reads?")
-# result.data is a validated ResearchFindings instance
-write_file("findings.json", result.data.model_dump_json(indent=2))
+# result.output is a validated ResearchFindings instance
+write_file("findings.json", result.output.model_dump_json(indent=2))
 ```
 
 ## Procedure
 
-1. Define the Pydantic `result_type` that captures the answer. **Criterion:** every field the consumer needs is present and typed.
+1. Define the Pydantic `output_type` that captures the answer. **Criterion:** every field the consumer needs is present and typed.
 2. `search_files` the repo for grounding context. **Criterion:** cited files actually exist and are referenced.
-3. Build the `Agent` with `OlamaModel` (local, no keys). **Criterion:** base_url points at localhost Ollama.
-4. Run and capture `result.data`. **Criterion:** it validates against `result_type` with no coercion warnings.
+3. Build the `Agent` with `OllamaModel` + `OllamaProvider(base_url="http://localhost:11434/v1")` (local, no keys). **Criterion:** the provider points at localhost Ollama's `/v1` endpoint.
+4. Run and capture `result.output`. **Criterion:** it validates against `output_type` with no coercion warnings.
 5. Persist with `write_file` / fold with `patch`. **Criterion:** the artifact is on disk and parseable.
 
 ## Pitfalls
@@ -82,5 +88,5 @@ write_file("findings.json", result.data.model_dump_json(indent=2))
 
 ## Verification
 
-- `result.data` is an instance of the declared model (assert `isinstance`).
+- `result.output` is an instance of the declared model (assert `isinstance`).
 - The written file parses and matches the schema.

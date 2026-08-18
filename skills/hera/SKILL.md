@@ -37,15 +37,16 @@ validator. No Anthropic keys; the judge runs on Ollama.
 
 ## Prerequisites
 
-- `pip install pydantic-ai`; Ollama local with `hermes3:8b` at
-  `http://localhost:11434`. No cloud keys.
+- `pip install pydantic-ai` (verified: pydantic-ai 2.31.1; pulls `openai>=2.45` for the Ollama provider).
+- Ollama local with `hermes3:8b` at `http://localhost:11434/v1` (the OpenAI-compatible endpoint; the `/v1` suffix is required by pydantic-ai's `OllamaProvider`). No cloud keys.
 
 ## Example Invocation
 
 ```python
 from pydantic import BaseModel, field_validator
 from pydantic_ai import Agent
-from pydantic_ai.models.ollama import OlamaModel
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 class Verdict(BaseModel):
     safe: bool
@@ -60,12 +61,16 @@ class Verdict(BaseModel):
         return v
 
 agent = Agent(
-    OlamaModel(model_name="hermes3:8b", base_url="http://localhost:11434"),
-    result_type=Verdict,
-    system_prompt="You are Hera. Mark safe=false for destructive or leaking changes.",
+    OllamaModel(
+        model_name="hermes3:8b",
+        provider=OllamaProvider(base_url="http://localhost:11434/v1"),
+    ),
+    output_type=Verdict,
+    instructions="You are Hera. Reply with ONLY a JSON object matching the schema.",
+    retries=3,
 )
 
-verdict = (await agent.run(patch_text)).data
+verdict = (await agent.run(patch_text)).output
 if not verdict.safe:
     clarify(f"Blocked: {verdict.reason}")   # do NOT patch
 else:
@@ -75,7 +80,7 @@ else:
 ## Procedure
 
 1. `read_file` the change under review. **Criterion:** you have the exact lines/diff.
-2. Run the `Verdict` agent on the change. **Criterion:** `verdict` validates as `Verdict`.
+2. Run the `Verdict` agent on the change. **Criterion:** `verdict` (the `output` of the agent run) validates as `Verdict`.
 3. If `safe` is false → stop and `clarify` or report; do NOT patch. **Criterion:** no mutation happened.
 4. If ambiguous → `clarify` before deciding. **Criterion:** the user's answer is recorded in context.
 5. Only when `safe` is true, `patch` the file. **Criterion:** the file changed exactly as intended and still parses.
